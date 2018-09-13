@@ -1,23 +1,18 @@
----
-title: "Edits to Bruno's tidyxl Blog Post"
-author: "Ben Stenhaug"
-output: 
-  github_document:
-    toc: true
-    toc_depth: 6
----
+Edits to Bruno’s tidyxl Blog Post
+================
+Ben Stenhaug
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+I read [a great blog
+post](http://www.brodrigues.co/blog/2018-09-11-human_to_machine/) by
+Bruno Rodrigues.
 
-I read [a great blog post](http://www.brodrigues.co/blog/2018-09-11-human_to_machine/) by Bruno Rodrigues.
-
-In going through it, I made some edits based on my preferred way of coding in R. I'll first show my code (with comments of edits I've made), then Bruno's code, and then that our results are the same:
+In going through it, I made some edits based on my preferred way of
+coding in R. I’ll first show my code (with comments of edits I’ve made),
+then Bruno’s code, and then that our results are the same:
 
 # Set Up
 
-```{r message = FALSE}
+``` r
 library(tidyverse)
 library(tidyxl)
 library(magrittr)
@@ -27,7 +22,7 @@ time_use_xl <- xlsx_cells("data/time_use.xlsx")
 
 # My Code
 
-```{r}
+``` r
 sheets <- # use object we wrote it and i prefer str_detect
    unique(time_use_xl$sheet) %>% 
    str_subset("day$")
@@ -93,9 +88,9 @@ clean_data_ben <-
    select(day, population, activities, time = character)
 ```
 
-# Bruno's Code
+# Bruno’s Code
 
-```{r}
+``` r
 sheets <- xlsx_sheet_names("data/time_use.xlsx") %>%
    keep(grepl(pattern = ".*day$", .))
 
@@ -136,8 +131,10 @@ clean_data_bruno <- sheets %>%
    select(day, population, activities, time = character)
 ```
 
-# Same Results!
+# Same Results\!
 
-```{r}
+``` r
 all_equal(clean_data_ben, clean_data_bruno)
 ```
+
+    ## [1] TRUE
