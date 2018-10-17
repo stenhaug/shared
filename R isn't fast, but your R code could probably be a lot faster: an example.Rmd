@@ -48,7 +48,7 @@ write.csv(demo.credits.class, "demo-credits-class.csv")
 
 # Speeding It Up
 
-The first thing I notice when looking at his code is that he has approached the problem — with nested loops and the necessary logic — in a way that works well for other languagues, but isn't the best for R. In general, R is best if you can write vectorized code as opposed to loops. Bonus points for keeping data in rectangular data frames and using the tools of the tidyverse. 
+The first thing I notice when looking at his code is that he approached the problem — with nested loops and the necessary logic — in a way that works well for other languagues, but isn't the best for R. In general, R is best if you can write vectorized code as opposed to loops. Bonus points for keeping data in rectangular data frames and using the tools of the tidyverse. 
 
 The second thing I notice is that I don't have access  to his data. So I make a very simple example:
 
