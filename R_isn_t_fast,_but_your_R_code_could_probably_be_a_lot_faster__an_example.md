@@ -56,7 +56,7 @@ points for keeping data in rectangular data frames and using the tools
 of the tidyverse.
 
 The second thing I notice is that I don’t have access to his data. So I
-make a very simple example:
+create simple data with the necessary characteristics:
 
 ``` r
 demo <- 
