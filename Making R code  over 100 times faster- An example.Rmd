@@ -56,7 +56,7 @@ It's also beneficial to keep data in rectangular data frames as opposed to more 
 
 I don't have access to his data. So I create the simplest possible data with the necessary characteristics that I can play around with when I write code. This is similar to the idea of a [reprex](https://www.tidyverse.org/help/):
 
-```{r}
+```{r message=FALSE}
 library(tidyverse)
 
 demographics <- 
@@ -93,7 +93,7 @@ transcript_single_class_var <-
    print() # this is a little trick to both print and assign results
 ```
 
-Now I select just the columns I need and spread the data to be "wide" instead of "long" so that each class is its own column. I use fill = 0 to encode that students who didn't have an indicator of 1 for a class did not take that class. You can read more about [the spread function here](https://r4ds.had.co.nz/tidy-data.html#spreading).
+Now I select just the columns I need and spread the data to be "wide" instead of "long" so that each class is its own column. You can read more about [the spread function here](https://r4ds.had.co.nz/tidy-data.html#spreading). I use fill = 0 to encode that students who didn't have an indicator of 1 for a class did not take that class.
 
 ```{r}
 transcript_wide <- 
@@ -103,7 +103,7 @@ transcript_wide <-
    print()
 ```
 
-Now that `transcript_wide` has a row for each `student_number`, all that's left to do is to join it with `demographics`. You can (read more about joins in R here)[https://r4ds.had.co.nz/relational-data.html].
+Now that `transcript_wide` has a row for each `student_number`, all that's left to do is to join it with `demographics`. You can [read more about joins in R here](https://r4ds.had.co.nz/relational-data.html).
 
 ```{r}
 demographics %>% left_join(transcript_wide, by = "student_number")
@@ -134,7 +134,7 @@ get_student_courses_tidy <- function(demographics, transcript){
 
 ### Creating large example data
 
-My friend's data had about 7,500 students and 325,000 transcript entries across about 850 math classes and 50 english classes. I'll make example data with only 2 classes, but I'll crank the number of students up to 150,000 to help see the speed difference.
+My friend's data has about 7,500 students and 325,000 transcript entries across about 850 math classes and 50 english classes. I'll make example data with only 2 classes, but I'll crank the number of students up to 150,000 to help see the speed difference.
 
 ```{r}
 n_students <- 150000
@@ -178,4 +178,4 @@ get_student_courses_tidy(demographics, transcript)
 tictoc::toc()
 ```
 
-If you'd like to get better at doing data science in R, the book [R for Data Science](https://r4ds.had.co.nz/) is a great resource. And if you're at Stanford, you can always [come meet us at walk-in consulting](https://ssds.stanford.edu/consulting-workshops/walk-consulting).
+If you'd like to get better at doing data science in R, the book [R for Data Science](https://r4ds.had.co.nz/) is a great resource. And if you're at Stanford, you can always [stop by walk-in consulting](https://ssds.stanford.edu/consulting-workshops/walk-consulting).
