@@ -1,0 +1,32 @@
+---
+title: "moving_average_investment_strategy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(Quandl)
+Quandl.api_key("F9uKxy8hDH3tSj1KzozL")
+
+quandl_get <-
+   function(sym, start_date = "2010-01-01"){
+       require(devtools)
+       require(Quandl)
+       # create a vector with all lines
+       tryCatch(Quandl(c(
+           paste0("WIKI/", sym, ".8"),  #  Adj. Open
+           paste0("WIKI/", sym, ".9"),  # Adj. High
+           paste0("WIKI/", sym, ".10"), # Adj. Low
+           paste0("WIKI/", sym, ".11"), # Adj. Close
+           paste0("WIKI/", sym, ".12")), # Adj. Volume
+           start_date = start_date
+           )) %>% 
+         as_tibble() %>% 
+         select(1, 2) %>% 
+         set_names(c("date", "price"))
+   }
+
+data <- quandl_get("DIA")
+```
+
