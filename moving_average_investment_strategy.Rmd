@@ -3,30 +3,112 @@ title: "moving_average_investment_strategy"
 output: html_document
 ---
 
+Data downloaded from https://finance.yahoo.com/quote/DIA/history?period1=885283200&period2=1550304000&interval=1d&filter=history&frequency=1d
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(Quandl)
-Quandl.api_key("F9uKxy8hDH3tSj1KzozL")
+theme_set(theme_classic(base_size = 16))
 
-quandl_get <-
-   function(sym, start_date = "2010-01-01"){
-       require(devtools)
-       require(Quandl)
-       # create a vector with all lines
-       tryCatch(Quandl(c(
-           paste0("WIKI/", sym, ".8"),  #  Adj. Open
-           paste0("WIKI/", sym, ".9"),  # Adj. High
-           paste0("WIKI/", sym, ".10"), # Adj. Low
-           paste0("WIKI/", sym, ".11"), # Adj. Close
-           paste0("WIKI/", sym, ".12")), # Adj. Volume
-           start_date = start_date
-           )) %>% 
-         as_tibble() %>% 
-         select(1, 2) %>% 
-         set_names(c("date", "price"))
-   }
+data <- read_csv("~/Desktop/DIA.csv") %>% select(1, 2) %>% set_names(c("date", "price"))
 
-data <- quandl_get("DIA")
+monthly_with_moving_averages <- 
+   data %>% 
+   mutate(
+      moving_average = zoo::rollmean(price, 300, align = "right", fill = NA),
+      invest = price > moving_average
+   ) %>% 
+   filter(
+      lubridate::day(date) == 1,
+      !is.na(moving_average)
+   ) %>% 
+   mutate(
+      did_i_invest = lag(invest, default = TRUE), 
+      percent_change = (price / lag(price)) %>% replace_na(1),
+      percent_change_moving = ifelse(did_i_invest, percent_change, 1)
+   )
 ```
+
+Let's look at the monthly price of the DJIA compared to the moving average.
+
+```{r}
+monthly_with_moving_averages %>% 
+   mutate(
+      outcome = cumprod(percent_change),
+      outcome_moving = cumprod(percent_change_moving)
+   ) %>% 
+   ggplot() +
+   geom_point(aes(x = date, y = price, color = invest)) +
+   geom_line(aes(x = date, y = moving_average), color = "black", size = 1) +
+   scale_y_continuous(labels = scales::dollar) +
+   labs(
+      x = "Date",
+      y = "Price",
+      color = "Would we have been invested?",
+      title = "Dow Jones Industrial Average Over Time"
+   )
+```
+
+What matters is how the market did during the 37 months we would have been out of the market because the price was less than the moving average.
+
+```{r}
+monthly_with_moving_averages %>% 
+   mutate(
+      outcome = cumprod(percent_change),
+      outcome_moving = cumprod(percent_change_moving)
+   ) %>% 
+   filter(!did_i_invest) %>% 
+   select(date, starts_with("percent_change")) %>% 
+   rename(no = percent_change_moving, yes = percent_change) %>% 
+   gather(var, val, -date) %>% 
+   ggplot(aes(x = date, y = val, color = var)) +
+   geom_point() + 
+   labs(
+      x = "Date",
+      y = "Percent change", 
+      color = "Were we invested?"
+   )
+```
+
+So what we're really after is how did we do in those 37 months if we had been invested
+
+```{r}
+monthly_with_moving_averages %>% 
+   filter(!did_i_invest) %>% 
+   summarize(
+      total_percent_change = prod(percent_change),
+      percent_of_months_market_went_up = mean(percent_change > 1)
+   )
+
+monthly_with_moving_averages %>% 
+   filter(!did_i_invest) %>% 
+   ggplot(aes(x = percent_change)) +
+   geom_histogram() +
+   geom_vline(xintercept = 1, color = "red")
+```
+
+Lastly look at overall performance based on 
+
+```{r}
+monthly_with_moving_averages %>% 
+   mutate(
+      `stay in market` = cumprod(percent_change),
+      `move in and out of market` = cumprod(percent_change_moving)
+   ) %>% 
+   select(date, `stay in market`, `move in and out of market`) %>% 
+   gather(var, val, -date) %>% 
+   ggplot(aes(x = date, y = val, color = var)) +
+   geom_line(size = 1) +
+   scale_y_continuous(labels = scales::dollar) +
+   labs(
+      x = "Date",
+      y = "",
+      title = "What would $1 have turned in to?",
+      subtitle = "Based on Dow Jones Industrial Average",
+      color = ""
+   )
+```
+
+
+
 

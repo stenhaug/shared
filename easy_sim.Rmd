@@ -1,0 +1,113 @@
+---
+title: "easy_sim"
+output: 
+   github_document:
+      toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Get started
+
+```{r}
+library(tidyverse)
+set.seed(1)
+```
+
+# Part 1: Write a function
+
+First write a function that simulates our data
+
+```{r}
+sim_tacos_and_points <- function(n_rows, mean_tacos, sd_tacos, sd_points, mean_points, ...){
+   tibble(
+      tacos_eaten = rnorm(n_rows, mean_tacos, sd_tacos),
+      points_scored = rnorm(n_rows, mean_points, sd_points)
+   )
+}
+```
+
+Example using the function
+
+```{r}
+sim_tacos_and_points(
+   n_rows = 10,
+   mean_tacos = 5,
+   sd_tacos = 3,
+   mean_points = 10,
+   sd_points = 3
+)
+```
+
+# Part 2: Simulate data
+
+Make a data frame of all parameter combinations we're interested in
+
+```{r}
+parameters <- 
+   crossing(
+      n_rows = 100,
+      mean_tacos = c(5, 10),
+      sd_tacos = c(1, 10),
+      mean_points = c(10),
+      sd_points = c(5)
+   ) %>% print()
+```
+
+Row-wise simulate data and store in a column of dataframes.
+
+```{r}
+parameters <- 
+   parameters %>% 
+   mutate(data = pmap(., sim_tacos_and_points)) %>% 
+   print()
+```
+
+Examples of a few things we can do with this
+
+0) Extract just one of the datasets
+
+```{r}
+# based on row number
+parameters$data[[1]]
+
+# based on parameters
+parameters %>% 
+   filter(mean_tacos == 5, sd_tacos == 1) %>% 
+   pull(data) %>% 
+   .[[1]]
+```
+
+1) Unnest all datasets and plot
+
+```{r}
+parameters %>% 
+   unnest() %>% 
+   ggplot(aes(x = tacos_eaten, y = points_scored)) +
+   geom_point() +
+   facet_grid(mean_tacos ~ sd_tacos) +
+   geom_smooth(method = "lm")
+```
+
+2) Fit a model to each dataset and store that in another column
+
+```{r}
+parameters <- 
+   parameters %>% 
+   mutate(
+      model = data %>% map(~ lm(points_scored ~ tacos_eaten, data = .)),
+      coef = model %>% map(broom::tidy)
+   ) %>% 
+   print()
+```
+
+Look at coefficients for each model
+
+```{r}
+parameters$coef
+```
+
+
+
