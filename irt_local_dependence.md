@@ -8,10 +8,12 @@ library(tidyverse)
 library(mirt)
 ```
 
-simulate data with a dependency. we’ll have 10000 students and 10 items.
-all items will have difficulty 0 and discrimination 1. the first 9 items
-will be as usual. the order dependence comes from students who got the
-9rd item correct get a 1-unit boost to their ability for the 10th item.
+### Simulate data with dependency
+
+we’ll have 100,000 students and 10 items. all items will have difficulty
+0 and discrimination 1. the first 9 items will be as usual. the order
+dependence comes from students who got the 9th item correct get a 1-unit
+boost to their ability for the 10th item.
 
 ``` r
 # simulate first 9 items
@@ -72,6 +74,8 @@ results %>% select(starts_with("theta"), item_9, item_10)
     ##  9      0.576    1.58       1       1
     ## 10     -0.305    0.695      1       1
     ## # … with 99,990 more rows
+
+### Fit models and look at results
 
 first, let’s verify that a model fit just to the first 9 items is as
 expected
