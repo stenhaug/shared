@@ -1,0 +1,91 @@
+---
+title: "irt_local_dependence"
+output: 
+  github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load packages
+
+```{r, message=FALSE}
+library(tidyverse)
+library(mirt)
+```
+
+simulate data with a dependency. we'll have 10000 students and 10 items. all items will have difficulty 0 and discrimination 1. the first 9 items will be as usual. the order dependence comes from students who got the 9rd item correct get a 1-unit boost to their ability for the 10th item. 
+
+```{r}
+# simulate first 9 items
+set.seed(1)
+n_students <- 100000
+dim <- 1
+n_items <- 9
+
+data <- 
+    simdata(
+        a = matrix(rep(1, n_items), nrow = n_items, ncol = dim),
+        d = matrix(rep(0, n_items), ncol = 1),
+        guess = rep(0, n_items),
+        N = n_students,
+        sigma = diag(dim),
+        mu = 0,
+        itemtype = rep("3PL", n_items),
+        returnList = TRUE
+    )
+
+# clean up results
+results <- 
+    data$data %>% 
+    as_tibble() %>% 
+    janitor::clean_names() %>% 
+    mutate(theta_1to9 = data$Theta[ , 1]) %>% 
+    mutate(theta_10 = ifelse(item_9 == 1, theta_1to9 + 1, theta_1to9)) %>% 
+    select(starts_with("theta"), everything())
+
+# add in 10th item
+set.seed(2)
+
+results$item_10 <- 
+    simdata(
+        Theta = matrix(results$theta_10, nrow = n_students, ncol = dim),
+        a = matrix(1, nrow = 1),
+        d = matrix(0, ncol = 1),
+        guess = 0,
+        itemtype = "3PL",
+        returnList = FALSE
+    )[, 1]
+
+# check it out
+results %>% select(starts_with("theta"), item_9, item_10)
+```
+
+first, let's verify that a model fit just to the first 9 items is as expected
+
+```{r}
+model_first_9 <- mirt(results %>% select(item_1:item_9), 1, "2PL", verbose = FALSE)
+
+# indeed, parameter recovery is good
+coef(model_first_9, simplify = TRUE)$items %>% 
+    as_tibble() %>% 
+    select(disc = 1, easy = 2)
+
+# indeed, we fail to reject goodness of fit
+M2(model_first_9)
+```
+
+second, let's see that a model fit to all items has some quirks
+
+```{r}
+model_all <- mirt(results %>% select(item_1:item_10), 1, "2PL", verbose = FALSE)
+
+# as makes sense, the discrimination of 9 and 10 are boosted and the 10th item is easier 
+coef(model_all, simplify = TRUE)$items %>% 
+    as_tibble() %>% 
+    select(disc = 1, easy = 2)
+
+# indeed, we reject goodness of fit
+M2(model_all)
+```

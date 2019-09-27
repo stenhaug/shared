@@ -108,7 +108,3 @@ monthly_with_moving_averages %>%
       color = ""
    )
 ```
-
-
-
-

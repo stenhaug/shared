@@ -1,0 +1,189 @@
+---
+title: "PCA"
+---
+
+# Describe this doc
+You can "Run All" (with the "Ctrl + Alt + R"" keyboard shortcut) to execute PCA and imputation
+
+```{r}
+load("ben.Rdata")
+
+library(assertr)
+library(tidyverse)
+#library(MASS)
+library(mice)
+```
+
+# Load one of the survey_wide data files:
+#   anonymous, original, or original + unmatched
+
+```{r}
+#survey <- read_csv("data_created/survey_wide_with_outcome_anon.csv")
+#survey <- read_csv("data_created/survey_wide_with_outcome1.csv")
+survey <- read_csv("data_created/survey_wide_with_outcome.csv")
+
+```
+
+# Add variables
+
+```{r}
+survey <- survey %>% 
+  mutate(STRatM_district = a13_district / a14_district,
+         STRatM_CMO = a13_CMO / a14_CMO) %>% 
+  mutate(STRatR_district = a15_district / a16_district,
+         STRatR_CMO = a15_CMO / a16_CMO) %>% 
+  mutate(STRatS8_district = a9_district / (b2_full_district + b2_part_district),
+         STRatS8_CMO = a9_CMO / (b2_full_CMO + b2_part_CMO)) 
+
+
+```
+
+# Define helper functions
+
+```{r}
+pr_items <- function(data, items){
+  data %>% 
+    dplyr::select(one_of(items)) %>% 
+    prcomp(center = TRUE, scale = TRUE) %>% 
+    .$x %>% 
+    .[ , 1]
+}
+
+one_pca <- function(items, name, just_cmo = "none"){
+  items_district <- paste0(items, "_district")
+  items_cmo <- paste0(items, "_CMO")
+  
+  names(survey)
+  
+  tmp1 <- survey %>% dplyr::select(c("Treatment_OBS", items_district)) %>% na.omit()
+  tmp1 <- tmp1 %>% 
+    mutate(type = "district") %>% 
+    dplyr::select(Treatment_OBS, type, everything()) %>% 
+    set_names(str_replace(names(.),"_district", ""))
+  
+  tmp2 <- survey %>% dplyr::select(c("Treatment_OBS", items_cmo)) %>% na.omit()
+  tmp2 <- tmp2 %>% 
+    mutate(type = "CMO") %>% 
+    dplyr::select(Treatment_OBS, type, everything()) %>% 
+    set_names(str_replace(names(.),"_CMO", ""))
+  
+  combined <- bind_rows(tmp1, tmp2)
+  
+  combined[[name]] <- pr_items(combined, items)
+  
+  combined %>% dplyr::select(-one_of(items))
+}
+```
+
+
+# Run PCA
+
+```{r}
+# Helper function to expand by type
+# TODO: there must be a standard way to do this...
+expand_with_column <- function(df, colname, val1, val2) {
+  df1 <- df %>%
+    mutate(!!colname := val1)
+  df2 <- df %>%
+    mutate(!!colname := val2)
+  bind_rows(df1, df2)
+}
+
+after_pca <- survey %>%
+  dplyr::select(Treatment_OBS, contains("Treatment_CMOID_CMO"), math_outcome:SEReading_outcome, DistrictName_district) %>%
+  expand_with_column("type", "CMO", "district") %>%
+  left_join(one_pca(c("c7_a", "c7_b", "c7_c", "c7_d"), "StuSanct")) %>%
+  left_join(one_pca(c("STRatM", "STRatR", "STRatS8"), "StuMon")) %>%
+  left_join(one_pca(c("c5a_a", "c5a_b", "c5a_c", "c5a_f", "c5b_a", "c5b_b", "c5b_c", "c5b_f"), "TchrMon")) %>%
+  left_join(one_pca(c("c5a_d", "c5a_e", "c5b_d", "c5b_e", "b20_b", "b20_c"), "TchrInst")) %>%
+  left_join(one_pca(c("b3", "d2_b", "c11_a", "c11_b"), "TchrSanct")) %>%
+  left_join(one_pca(c("c6_a", "c6_b", "c6_c"), "TchrColl")) %>%
+  left_join(one_pca(c("b9_i", "b9_j", "b9_k", "b9_l", "b9_m"), "TchrScreen")) %>%
+  #left_join(one_pca(c("c5b_a", "c5b_b", "c5b_c", "c5b_f"), "TchrMonExp")) %>%
+  #left_join(one_pca(c("c5a_a", "c5a_b", "c5a_c", "c5a_f"), "TchrMonNew")) %>%
+  left_join(one_pca(items = c("a17_d", "a17_e", "a17_f", "a17_g"), "FamCom"))
+
+after_pca <- as.data.frame(after_pca) %>%
+  dplyr::select(type, Treatment_OBS, Treatment_CMOID_CMO, everything()) %>%
+  arrange(Treatment_OBS, type)
+```
+
+# Run PCA (Ben's version)
+
+```{r, eval=FALSE}
+# within one_pca the first argument is items for both, the second argument is the name of the column, and the third argument is items for just the cmo
+#after_pca <- survey %>% dplyr::select(Treatment_OBS, KIPP, math_outcome:SEReading_outcome) %>%
+after_pca <- survey %>% dplyr::select(Treatment_OBS, contains("Treatment_CMOID_CMO"), math_outcome:SEReading_outcome) %>%
+  left_join(one_pca(c("c7_a", "c7_b", "c7_c", "c7_d"), "StuSanct")) %>% # works
+  left_join(one_pca(c("STRatM", "STRatR", "STRatS8"), "StuMon")) %>% # works
+  left_join(one_pca(c("c5a_a", "c5a_b", "c5a_c", "c5a_f", "c5b_a", "c5b_b", "c5b_c", "c5b_f"), "TchrMon")) %>% # works
+  left_join(one_pca(c("c5a_d", "c5a_e", "c5b_d", "c5b_e", "b20_b", "b20_c"), "TchrInst")) %>% # works
+  left_join(one_pca(c("b3", "d2_b", "c11_a", "c11_b"), "TchrSanct")) %>% # works
+  left_join(one_pca(c("c6_a", "c6_b", "c6_c"), "TchrColl")) %>% # works
+  left_join(one_pca(c("b9_i", "b9_j", "b9_k", "b9_l", "b9_m"), "TchrScreen")) %>% # works
+  #left_join(one_pca(c("c5b_a", "c5b_b", "c5b_c", "c5b_f"), "TchrMonExp")) %>%
+  #left_join(one_pca(c("c5a_a", "c5a_b", "c5a_c", "c5a_f"), "TchrMonNew")) %>%
+  left_join(one_pca(items = c("a17_d", "a17_e", "a17_f", "a17_g"), name = "FamCom")) # works
+
+after_pca <- as.data.frame(after_pca) %>%
+  dplyr::select(type, Treatment_OBS, Treatment_CMOID_CMO, everything()) %>%
+  arrange(Treatment_OBS, type)
+```
+
+# Reshape back to wide
+
+```{r}
+after_pca2 <- 
+  after_pca %>% 
+  gather(var, val, StuSanct:FamCom) %>% 
+  mutate(newvar = paste0(var, "_", type)) %>% 
+  dplyr::select(-type, -var) %>% 
+  spread(newvar, val) %>% 
+  dplyr::select(-contains("_NA")) 
+```
+
+# Try running MICE
+This is where we'll actually use mice to run models
+
+```{r}
+# this runs mice (with m = 5 datasets produced)
+nimp <- 5
+imputed_data <- mice(after_pca2, m = nimp, maxit = 50, meth = 'pmm', seed = 500)
+```
+
+# Define MICE helper functions for models
+
+```{r}
+lmMICE <- function(input_model) {
+  mi <- vector("list", nimp)
+  for (i in 1:nimp) {
+    data <- mice::complete(imputed_data, i)
+    processed <- data %>% 
+      left_join(survey %>% dplyr::select(Treatment_OBS, state = state_CMO, cmo_id = Treatment_CMOID_CMO,  
+                                         district_name =  DistrictName_CMO, leaid = LEAID_CMO))
+    ## Run least squares on each imputed dataset,
+    ## and save results in a list vector
+    mi[[i]] <- lm(input_model, data=processed)
+  }
+
+  ## Draw 1/nimp of the beta simulations from each run of least squares
+  sims <- 10000
+  simbetas <- NULL
+  for (i in 1:nimp) {
+    simbetas <- rbind(simbetas, MASS::mvrnorm(sims/nimp, coef(mi[[i]]), vcov(mi[[i]])))
+  }
+
+  pe <-apply(simbetas,2,mean)
+  se <-apply(simbetas,2,sd)
+  tstat <- pe/se
+  pval <- 2*pt(-abs(tstat),  df.residual(mi[[1]]))
+  lo95 <- apply(simbetas, 2, quantile, probs=0.025)
+  up95 <- apply(simbetas, 2, quantile, probs=0.975)
+
+  cbind(pe,se,pval,lo95,up95)
+}
+
+i <- 1 #TODO: why is this here?
+
+```
+

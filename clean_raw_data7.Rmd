@@ -1,0 +1,317 @@
+---
+title: "Clean Raw Data"
+---
+
+# Load raw data, clean it, and generate survey_wide_with_outcome for analysis
+
+```{r}
+library(assertr)
+library(tidyverse)
+```
+
+# Define utilty functions
+
+```{r}
+# Adds a suffix to every variable name in the data set
+add_suffix <- function(df, suffix){
+  names(df) <- paste0(names(df), "_", suffix)
+  df
+}
+
+# Replace a single value in the target column of a data frame. Target specified with filter column.
+jz.replace_one_val <- function(df, col_filter, val_filter, col_target, val_target, dbg = FALSE) {
+  r <- which(df[col_filter] == val_filter)
+  stopifnot(length(r) == 1)
+  if (dbg) 
+    print(paste0("Replacing ", df[r, col_target], " with ", val_target))
+  df[r, col_target] <- val_target
+  df
+}
+
+# Replace a single value in the target column of a data frame only if it is NA. Target specified with filter column.
+jz.replace_one_na_val <- function(df, col_filter, val_filter, col_target, val_target, dbg = FALSE) {
+  r <- which((df[col_filter] == val_filter) & is.na(df[col_target]))
+  stopifnot(length(r) == 1)
+  if (dbg) 
+    print(paste0("Replacing ", df[r, col_target], " with ", val_target))
+  df[r, col_target] <- val_target
+  df
+}
+
+# Replace a single value in the target column of a data frame only if it is zero. Target specified with filter column.
+jz.replace_one_zero_val <- function(df, col_filter, val_filter, col_target, val_target, dbg = FALSE) {
+  r <- which((df[col_filter] == val_filter) & (df[col_target] == 0))
+  stopifnot(length(r) == 1)
+  if (dbg) 
+    print(paste0("Replacing ", df[r, col_target], " with ", val_target))
+  df[r, col_target] <- val_target
+  df
+}
+
+```
+
+# Load raw data
+
+```{r}
+# Load the raw data
+prin_survey_raw <- read_csv("data_raw/PrinSurvImpact.csv")
+school_outcome_raw <- readxl::read_excel("data_raw/SchoolDV.xlsx")
+
+# Verify that the data matches expectations
+prin_survey_raw <- prin_survey_raw %>%
+  verify(ncol(.) == 416) %>%
+  verify(nrow(.) == 400)
+
+school_outcome_raw <- school_outcome_raw %>%
+  verify(length(names(.)) == 8) %>%
+  verify(length(Treatment_OBS) == 67)
+```
+
+# Prune unnecessary variables
+
+```{r}
+prin_survey <- prin_survey_raw %>% 
+  dplyr::select(-contains("zscore")) %>% 
+  dplyr::select(intv_status:d5b_4)
+
+school_outcome <- school_outcome_raw %>% 
+  dplyr::select(-`In Survey?`) %>% 
+  add_suffix("outcome")
+
+```
+
+# Fix up missing school pairings
+
+```{r}
+# Helper function to replace Treatment_OBS of 0 in survey
+replace_zero_obs <- function(df, school_name, new_obs) {
+  r <- which((df$SchoolName == school_name) & (df$Treatment_OBS == 0))
+  stopifnot(length(r) == 1)
+  df$Treatment_OBS[r] <- new_obs
+  df
+}
+
+# Helper function to replace Treatment_OBS of NA in outcome
+replace_na_obs <- function(df, school_name, new_obs) {
+  r <- which((df$School_outcome == school_name) & is.na(df$Treatment_OBS_outcome))
+  stopifnot(length(r) == 1)
+  df$Treatment_OBS_outcome[r] <- new_obs
+  df
+}
+
+# Survey fixups
+prin_survey <- prin_survey %>%
+  replace_zero_obs("BRIARMEADOW MIDDLE SCHOOL", 252) %>%  # YES Prep "LEE"
+  replace_zero_obs("WOODSON MIDDLE", 230) %>%             # YES Prep "SOUTHWEST"
+  replace_zero_obs("T H ROGERS SEC", 229)                 # YES Prep "NORTH CENTRAL"
+
+# Outcome fixups
+school_outcome <- school_outcome %>%
+  replace_na_obs("Houston HSA Impact", 232) %>%           # Catch T H ROGERS
+  replace_na_obs("WILL Academy Impact", 325) %>%          # Catch Stuart-Hobson Middle School
+  replace_na_obs("Triumph Charter Academy", 78) %>%       # Catch SAN FERNANDO MIDDLE
+  replace_na_obs("Dr. James L. Burch Intermediate", 203)  # Catch Nimitz Middle School
+
+```
+
+# Filter to CMOs with data
+
+```{r}
+# filter to the 19 for which we have outcome data
+treat_cmo_good <- c(2, 4, 7, 8, 14, 16, 18, 19, 21, 22, 23, 24, 25, 26, 31, 32, 35, 39, 41)
+
+prin_survey <- prin_survey %>% 
+  filter(Treatment_CMOID %in% treat_cmo_good)
+
+```
+
+# Assign fake Treatment_OBS values starting at 500 to outcomes with missing district school pairings
+
+```{r}
+stopifnot(nrow(filter(school_outcome, is.na(Treatment_OBS_outcome))) == 18) # used to be 21 before fixups
+
+school_outcome <- school_outcome %>%
+  arrange(!is.na(Treatment_OBS_outcome), Treatment_OBS_outcome) %>%
+  mutate(fake_OBS = 500:(499+nrow(school_outcome))) %>%
+  mutate(Treatment_OBS_outcome = ifelse(is.na(Treatment_OBS_outcome), fake_OBS, Treatment_OBS_outcome)) %>%
+  mutate(fake_OBS = NULL) %>%
+  arrange(CMO_outcome)
+
+stopifnot(nrow(filter(school_outcome, is.na(Treatment_OBS_outcome))) == 0)
+
+```
+
+# Create prin_survey_wide
+NB: This removes the special Treatment_OBS == 0
+
+```{r}
+# spread wide
+values <- sort(unique(prin_survey$Treatment_OBS))
+values <- values[-1]
+
+take <- function(t_obs){
+  a <- prin_survey %>% 
+  dplyr::select(Treatment_OBS, Admin, everything()) %>% 
+  filter(Treatment_OBS == t_obs, Admin == "district") %>% 
+  add_suffix("district")
+
+  if(nrow(a) == 0){
+    a[1, ] <- rep(NA, ncol(a))
+  }
+
+  b <- prin_survey %>% 
+    dplyr::select(Treatment_OBS, Admin, everything()) %>% 
+    filter(Treatment_OBS == t_obs, Admin == "CMO") %>% 
+    add_suffix("CMO")
+
+  if(nrow(b) == 0){
+    b[1, ] <- rep(NA, ncol(b))
+  }
+  
+  cbind(a, b)
+}
+
+# execute
+prin_survey_wide <- values %>% map_df(take) %>% as_tibble()
+
+```
+
+# Add outcome data to prin_survey_wide to produce our final survey variable (formerly survey_wide_with_outcome)
+
+```{r}
+# Create fake observations in prin_survey_wide for the umatched outcomes so we can join the data sets
+unmatched_OBS <- filter(school_outcome, Treatment_OBS_outcome >= 500)$Treatment_OBS_outcome
+
+tmp <- prin_survey_wide %>% 
+  mutate(Treatment_OBS = pmin(prin_survey_wide$Treatment_OBS_CMO, prin_survey_wide$Treatment_OBS_district, na.rm = TRUE)) %>% 
+  add_row(Treatment_OBS = unmatched_OBS) %>%
+  left_join(school_outcome %>% filter(!is.na(Treatment_OBS_outcome)), by = c("Treatment_OBS" = "Treatment_OBS_outcome")) %>% 
+  dplyr::select(contains("Treatment_OBS"), contains("outcome"), everything()) 
+
+survey <- tmp %>% 
+  rename(math_outcome = `2YRMath_outcome`, reading_outcome = `2YReading_outcome`) %>% 
+  filter(!is.na(math_outcome) | !is.na(reading_outcome)) 
+
+```
+
+# Fixup CMOID 
+
+```{r}
+# List of correct (Treatment_OBS, CMOID) pairs for Treatment_CMOID_CMO
+fixup_CMOIDs <- list(
+  c(78, 31),
+  c(203, 35),
+  c(232, 18),
+  c(325, 25),
+  c(500, 2),
+  c(501, 2),
+  c(502, 4),
+  c(503, 8),
+  c(504, 100),
+  c(505, 100),
+  c(506, 100),
+  c(507, 100),
+  c(508, 25),
+  c(509, 101),
+  c(510, 101),
+  c(511, 101),
+  c(512, 101),
+  c(513, 35),
+  c(514, 39),
+  c(515, 102),
+  c(516, 102),
+  c(517, 102)
+)
+
+tmp <- t(simplify2array(fixup_CMOIDs))
+for (i in 1:nrow(tmp)) {
+  survey <- jz.replace_one_val(survey, "Treatment_OBS", tmp[i, 1], "Treatment_CMOID_CMO", tmp[i, 2])
+}
+
+```
+
+# Fixup DistrictName
+
+```{r}
+# List all district names
+tmp <- survey[c(which(names(survey) == "Treatment_OBS"), grep("DistrictName", names(survey)))]
+
+# List all different district names
+tmp2 <- subset(tmp, !is.na(DistrictName_CMO) & !is.na(DistrictName_district) & (DistrictName_CMO != DistrictName_district))
+```
+
+# Fixup incorrect states
+
+```{r}
+# List of correct (Treatment_OBS, state) pairs for CMO state
+fixup_states <- list(
+  c(78, "CA"),  # NA
+  c(195, "TX"), # not PA
+  c(203, "TX"), # NA
+  c(232, "TX"), # NA
+  c(254, "NY"), # not TX
+  c(284, "AZ"), # not CA
+  c(294, "NY"), # not TX
+  c(299, "AZ"), # not CA
+  c(309, "IL"), # not IN
+  c(311, "TX"), # not NJ
+  c(319, "AZ"), # not TX
+  c(325, "DC"), # NA
+  c(331, "TX"), # not DC
+  c(500, "NY"), # NA
+  c(501, "NY"), # NA
+  c(502, "CA"), # NA
+  c(503, "CA"), # NA
+  c(504, "OH"), # NA
+  c(505, "OH"), # NA
+  c(506, "OH"), # NA
+  c(507, "OH"), # NA
+  c(508, "DC"), # NA
+  c(509, "NY"), # NA
+  c(510, "NY"), # NA
+  c(511, "NY"), # NA
+  c(512, "NY"), # NA
+  c(513, "TX"), # NA
+  c(514, "NY"), # NA
+  c(515, "TX"), # NA
+  c(516, "TX"), # NA
+  c(517, "TX") # NA
+  )
+
+tmp <- t(simplify2array(fixup_states))
+for (i in 1:nrow(tmp)) {
+  survey <- jz.replace_one_val(survey, "Treatment_OBS", tmp[i, 1], "state_CMO", tmp[i, 2])
+}
+
+```
+
+# Add a KIPP variable
+
+```{r}
+survey <- survey %>% 
+  mutate(KIPP = ifelse(str_detect(str_to_lower(CMO_outcome), "kipp"), 1, 0))
+stopifnot(sum(survey$KIPP) == 13)
+
+```
+
+# Compare the generated survey_wide_with_outcome with the existing one so we know if something changed
+
+```{r}
+# Save the current survey_wide so the column types match when comparing with the old one
+survey %>% write_csv("data_created/survey_wide_with_outcome_tmp.csv")
+
+old_sv <- read_csv("data_created/survey_wide_with_outcome.csv")
+new_sv <- read_csv("data_created/survey_wide_with_outcome_tmp.csv")
+all_equal(old_sv, new_sv)
+
+```
+
+# Save the survey_wide_with_outcome results to a csv file for subsequent analysis
+NB: This code chunk will not run by default so we are intentional when we overwrite the file
+NB: Remember to archive each version of survey_wide_with_outcome as we make changes
+
+```{r, eval=FALSE}
+survey %>% write_csv("data_created/survey_wide_with_outcome.csv")
+
+```
+

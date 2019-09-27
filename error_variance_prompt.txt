@@ -1,0 +1,5 @@
+OK, i have a 'math problem' of sorts for any interested parties. some background:
+--in the context of an ongoing project i have really learned some lessons about measurement error in RHS variables. i have been using this package a great deal. i highly recommend it. https://cran.r-project.org/web/packages/eivtools/index.html
+--now, the issue here is that a certain unnamed economist wants to include test scores as a quadratic predictor. so, that means i need to be able to talk about the covariance matrix of the relevant error term.
+--let's get concrete. suppose we observe test score Y where Y=X+e (the CTT model wherein X and e are independent). the error variance of Y is just Var(Y-X)=Var(e). the error variance of Var(Y^2-X^2) can be worked out fairly quickly as well.
+--now, the last thing i need is cov(Y-X,Y^2-X^2). i have several pages of algebra and an ugly expression. a second person arriving at the same ugly expression would help me sleep better!

@@ -1,0 +1,218 @@
+---
+title: "Models"
+---
+
+# Allison Models
+This file contains a collection of models that Allison is experimenting with.
+
+```{r}
+library(assertthat)
+library(MASS)
+library(tidyverse)
+library(mice)
+```
+
+```{r}
+# Model 1: all subtracted variables regressed on math. StuSanct and Tchr sig at 1 tail.
+model1 <- math_outcome ~  + as.factor(cmo_id) + I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + 
+  I(StuSanct_CMO - StuSanct_district) + I(TchrScreen_CMO - TchrScreen_district) + I(TchrMon_CMO - TchrMon_district) + 
+  I(TchrInst_CMO - TchrInst_district) + I(TchrColl_CMO - TchrColl_district) + I(TchrSanct_CMO - TchrSanct_district) + state
+
+debug(lmMICE)
+
+lmMICE(model1)
+```
+
+```{r}
+# Model 2: all non-subtracted variables on math (Stusanct and TchrSanct sig @ 2 tail .05 w/ large coeff, states CA, CT, DC, TX also sig @ various levels w/ HUGE effects. Wht does this mean?
+model2 <- math_outcome ~  FamCom_CMO + StuMon_CMO + StuSanct_CMO + TchrMon_CMO + TchrSanct_CMO + TchrInst_CMO + TchrColl_CMO + TchrScreen_CMO + state
+lmMICE(model2)
+
+```
+
+```{r}
+# Model 3: all subtracted variables on math excluding state (worse: only Stusanct sig, albeit w/ much higher sig and somewhat lrgr coeff as model w/ state)
+model3 <- math_outcome ~  I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + 
+  I(StuSanct_CMO - StuSanct_district) + I(TchrScreen_CMO - TchrScreen_district) + I(TchrMon_CMO - TchrMon_district) + 
+  I(TchrInst_CMO - TchrInst_district) + I(TchrColl_CMO - TchrColl_district) + I(TchrSanct_CMO - TchrSanct_district) 
+lmMICE(model3)
+```
+
+```{r}
+# Model 4: all non-subtracted variables on math excluding state. StuSanct sig w/ lrgr coeff than w/ state
+model4 <- math_outcome ~  FamCom_CMO + StuMon_CMO + StuSanct_CMO + TchrScreen_CMO + TchrMon_CMO +  
+  TchrInst_CMO + TchrColl_CMO + TchrSanct_CMO 
+lmMICE(model4)
+```
+```{r}
+#Model 5: STD (Best) MODEL: Full model - select teacher variables (excludes:_screen, _coll):  StuSanct and TchrSanct remain sig at 1 tail, slightly improved p val for SS. (Rmvg FamCom does nothing).
+model5 <- math_outcome ~  I(FamCom_CMO - FamCom_district) +  I(StuMon_CMO - StuMon_district) +
+  I(StuSanct_CMO - StuSanct_district) + I(TchrMon_CMO - TchrMon_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district) + state
+lmMICE(model5)
+```
+```{r}
+#Model 5NS: STD MODEL excluding state. Removing state gives StuSanct 2-tail @ .05 sig, removes sig from TchrSanct. 
+model5NS <- math_outcome ~ I(FamCom_CMO - FamCom_district) +  I(StuMon_CMO - 
+  StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrMon_CMO - TchrMon_district) +
+  I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district)
+lmMICE(model5NS)
+```
+```{r}
+#Model 5.1: STD Model above - FamCom. Doesn't change much. 
+model5.1 <- math_outcome ~   I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrMon_CMO - TchrMon_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district) + state
+lmMICE(model5.1)
+```
+```{r}
+#Model 5.1NS: (no state). Removing state improves StuSanct sig to 2 tail .05 and increase coeff but removes sig from TchrSanct
+model5.1 <- math_outcome ~   I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrMon_CMO - TchrMon_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district)
+lmMICE(model5.1)
+```
+
+```{r}
+#Model 5.2: (Best model) STD model - TchrMon. Slight improvement, StuSanct and TchrSanct both sig at 1 tail (almost 2) @ .1.
+model5.2 <- math_outcome ~  I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district) + state 
+lmMICE(model5.2)
+```
+```{r}
+#Model 5.2NS: Removing state improves sig of StuSanct to 2 tail, but removes it from TchrSanct
+model5.2NS <- math_outcome ~  I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district)
+lmMICE(model5.2NS)
+```
+
+```{r}
+#Model 5.3: Best model - FamCom, TchrMon. StuSanct and TchrSanct both close to sig at 2 tail, but not materially diff from above.
+model5.3 <- math_outcome ~  I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district)  + state
+lmMICE(model5.3)
+```
+
+```{r}
+#Model 5.3NS. Removing state removes TchrSanct  sig 
+model5.3NS <- math_outcome ~ I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district) 
+lmMICE(model5.3NS)
+```
+
+```{r}
+#Model 5.4:  STTD model - FamCom, TchrMon, StuMon. Not materially diff from above; sig and coeff of StuSanct and TchrSanct stay same
+model5.4 <- math_outcome ~I(StuSanct_CMO - StuSanct_district) + I(TchrSanct_CMO - TchrSanct_district) + I(TchrInst_CMO - TchrInst_district) + state
+lmMICE(model5.4)
+```
+```{r}
+#Model X: Exploring non-subtracted(- TchrMon, TchrColl)
+modelX <- math_outcome ~  FamCom_CMO + StuMon_CMO + StuSanct_CMO + TchrSanct_CMO + TchrInst_CMO + TchrMon_CMO + state
+lmMICE(modelX)
+```
+
+```{r}
+#Model X.1: Exploring non-subtracted (- TchrMon, TchrColl, TchrScreen)
+modelX.1 <- math_outcome ~  FamCom_CMO + StuMon_CMO + StuSanct_CMO + TchrSanct_CMO + TchrInst_CMO + state
+lmMICE(modelX.1)
+```
+```{r}
+#Model X.2: Exploring non-subtracted (- TchrMon, TchrColl, TchrScreen, TchrInst)
+modelX.2 <- math_outcome ~  FamCom_CMO + StuMon_CMO + StuSanct_CMO + TchrSanct_CMO + state
+lmMICE(modelX.2)
+```
+
+```{r}
+#Model 8: play 
+model8 <- math_outcome ~ I(StuSanct_CMO - StuSanct_district) + I(Sti_CM - TchrColl_district) + state
+lmMICE(model8)
+```
+```{r}
+#Earlier Model 9: std model 5 w/o StuMon, TchrColl- Best model with state bf pcafix - TchrInst sig @ .10 and .34 ce
+#New Model 9: std model 5 w/o TchrColl, TchrInst 
+model9 <- math_outcome ~  I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + 
+  I(StuSanct_CMO - StuSanct_district) + I(TchrInst_CMO - TchrInst_district) + state
+lmMICE(model9)
+```
+```{r}
+#Model 10 - starting from scratch  - best model (state retains sig and approx coefi)
+model10 <- math_outcome ~ I(StuSanct_CMO - StuSanct_district) + I(TchrMon_CMO - TchrMon_district) + I(StuMon_CMO - StuMon_district) + state
+lmMICE(model10)
+```
+
+```{r}
+#Model 11 -
+model11 <- math_outcome ~ I(StuSanct_CMO - StuSanct_district) + I(StuMon_CMO - StuMon_district) + I(TchrScreen_CMO - TchrScreen_district) + state
+lmMICE(model11)
+```
+
+```{r}
+#Model 12 - scratch model 10 w/ nonsubtracted  
+model12 <- math_outcome ~ StuSanct_CMO + state 
+lmMICE(model12)
+```
+
+```{r}
+#Model 10: std model 5 w/o StuMon, TchrColl, state
+#Best model w/o state bf pcafix - TchrInst sig @ .05 and .038 ce
+model10 <<- math_outcome ~  I(FamCom_CMO - FamCom_district) + I(StuMon_CMO - StuMon_district) + I(StuSanct_CMO - StuSanct_district) + I(TchrInst_CMO - TchrInst_district)   
+lmMICE(model10)
+```
+
+```{r}
+#Model 11: std model 5 w/o StuMon, TchrMon, TchrColl 
+model11 <- math_outcome ~  I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district)  + I(TchrInst_cmo - TchrInst_district) + state
+lmMICE(model11)
+```
+
+```{r}
+#Model 12: std model 5 w/o StuMon, TchrMon, TchrColl, state
+#perf: worse than model with TchrMon included
+model12 <- math_outcome ~  I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(TchrInst_cmo - TchrInst_district) 
+lmMICE(model12)
+```
+
+```{r}
+#Model 13: best model # 9 above ( 2 Tchr Vars) with TchrMon var revised to include new teachers only (better than exp)
+model13 <- math_outcome ~ I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(TchrMonNew_cmo - TchrMonNew_district) + I(TchrInst_cmo - TchrInst_district) 
+  lmMICE(model13)
+
+```
+
+```{r}
+modelsimple <- math_outcome ~ state
+lmMICE(modelsimple)
+
+```
+```{r}
+model9 <- math_outcome ~  I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district)
+lmMICE(model9)
+```
+```{r}
+model10 <- math_outcome ~  I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district) + state
+lmMICE(model10)
+```
+
+```{r}
+
+model9<- math_outcome ~ I(StuSanct_cmo - StuSanct_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district) + state
+lmMICE(model9)
+
+```
+```{r}
+
+model14<- math_outcome ~ I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(StuMon_cmo - StuMon_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district) + state
+lmMICE(model14)
+```
+
+```{r}
+modelxx <- math_outcome ~  I(StuSanct_cmo - StuSanct_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district)
+lmMICE(modelxx)
+```
+```{r}
+modelxxx <- math_outcome ~  I(StuSanct_cmo - StuSanct_district) + I(TchrInst_cmo - TchrInst_district) + state
+lmMICE(modelxxx)
+```
+
+```{r}
+model15<- math_outcome ~ I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(StuMon_cmo - StuMon_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district)
+lmMICE(model15)
+```
+```{r}
+model16<- math_outcome ~ I(FamCom_cmo - FamCom_district) + I(StuSanct_cmo - StuSanct_district) + I(StuMon_cmo - StuMon_district) + I(TchrMon_cmo - TchrMon_district) + I(TchrInst_cmo - TchrInst_district) + I(TchrScreen_cmo - TchrScreen_district) + I (TchrColl_cmo - TchrColl_district)
+lmMICE(model16)
+```
+
+
+
