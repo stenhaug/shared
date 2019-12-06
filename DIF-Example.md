@@ -1,0 +1,1224 @@
+DIF Example
+================
+
+## Takeways
+
+We’ll use a simulation to show how to identify DIF and what can go
+wrong. In particular, we’ll see that
+
+1.  If you anchor on an item without DIF, you recover everything well
+
+2.  If you accidentally anchor on an item with DIF, that difference gets
+    incorrectly soaked up into the difference in group means
+
+3.  If you don’t anchor on anything at all, the model isn’t identified
+    and you get weird results
+
+## Simulation
+
+Imagine two groups of students (old and young).
+
+First, simulate the 250k old students who have ability N(0, 1) and take
+a test where all items are Rasch and have item easiness of 0.
+
+``` r
+library(tidyverse)
+library(mirt)
+
+n_students_each_group <- 250000
+
+theta_old <- rnorm(n_students_each_group, 0, 1)
+
+data_old <- 
+   simdata(
+      a = c(1, 1, 1, 1, 1), # setting these all to 1 make these Rasch
+      d = c(0, 0, 0, 0, 0),
+      itemtype = "2PL",
+      Theta = matrix(theta_old)
+   )
+```
+
+Next simulate the 250k young students who have ability N(-1, 1) and take
+the same test with all Rasch items but for some reason the 5th item has
+easiness -1 instead of 0 so it is more difficult for these young
+students:
+
+``` r
+theta_young <- rnorm(n_students_each_group, -1, 1)
+
+data_young <- 
+   simdata(
+      a = c(1, 1, 1, 1, 1),
+      d = c(0, 0, 0, 0, -1), # item 5 biases against young students!
+      itemtype = "2PL",
+      Theta = matrix(theta_young)
+   )
+
+# combine old and young data
+data_combined <- rbind(data_old, data_young)
+
+# and keep track of which rows are old vs. young
+old_or_young <- rep(c("old", "young"), each = n_students_each_group)
+```
+
+To summarize, here are the data generating parameters:
+
+``` r
+tibble(
+   what = c(paste0("Item ", 1:5, " Easiness"), "Group Mean"),
+   old = c(0, 0, 0, 0, 0, 0),
+   young = c(0, 0, 0, 0, -1, -1)
+) %>% 
+   mutate(difference = young - old) %>% 
+   kableExtra::kable()
+```
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+what
+
+</th>
+
+<th style="text-align:right;">
+
+old
+
+</th>
+
+<th style="text-align:right;">
+
+young
+
+</th>
+
+<th style="text-align:right;">
+
+difference
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 1 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 2 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 3 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 4 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 5 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+\-1
+
+</td>
+
+<td style="text-align:right;">
+
+\-1
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Group Mean
+
+</td>
+
+<td style="text-align:right;">
+
+0
+
+</td>
+
+<td style="text-align:right;">
+
+\-1
+
+</td>
+
+<td style="text-align:right;">
+
+\-1
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+We’re going to fit a few multiple group models and we’ll want to quickly
+summarize parameters so let’s write a helper function:
+
+``` r
+summarize_model <- function(model){
+   coef_young <- coef(model, simplify = TRUE)$young
+   coef_old <- coef(model, simplify = TRUE)$old
+   
+   tibble(
+      what = c(paste0("Item ", 1:5, " Easiness"), "Group Mean"),
+      old = c(coef_old$items[ , "d"], coef_old$means),
+      young = c(coef_young$items[ , "d"], coef_young$means)
+   ) %>% 
+      mutate(difference = young - old) %>% 
+      mutate_if(is.numeric, round, 3)
+}
+```
+
+## 1: Choose a good anchor
+
+Now we can fit multiple group models\!
+
+To start, if we anchor on one or all of the items that don’t have DIF
+(e.g. just item 1 in the code below) we happily recover the data
+generating parameters:
+
+``` r
+multipleGroup(
+   data_combined, 
+   1, 
+   itemtype = "Rasch",
+   group = old_or_young, 
+   # this notation says freely estimate the group means but
+   # constrain item 1 to be invariant
+   invariance = c("free_means", "Item_1"),
+   verbose = FALSE
+) %>% 
+   summarize_model() %>% 
+   kableExtra::kable()
+```
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+what
+
+</th>
+
+<th style="text-align:right;">
+
+old
+
+</th>
+
+<th style="text-align:right;">
+
+young
+
+</th>
+
+<th style="text-align:right;">
+
+difference
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 1 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.004
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.004
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 2 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.001
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.006
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.007
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 3 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.007
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.010
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.017
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 4 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.011
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.011
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 5 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.002
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.002
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.999
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Group Mean
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.993
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.993
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+## 2a: Constrain everything
+
+If we accidentlly constrain all items (despite item 5 is being harder
+for young students), then that shows up in a couple of ways:
+
+  - lower estimate of the young group mean than we should have
+  - item 5 easiness is somewhere between the old value of 0 and the
+    young value of -1
+
+<!-- end list -->
+
+``` r
+multipleGroup(
+   data_combined, 
+   1, 
+   itemtype = "Rasch",
+   group = old_or_young, 
+   # freely estimate group means but constrain all items invariant
+   invariance = c("free_means", "intercepts"),
+   verbose = FALSE
+) %>% 
+   summarize_model() %>% 
+   kableExtra::kable()
+```
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+what
+
+</th>
+
+<th style="text-align:right;">
+
+old
+
+</th>
+
+<th style="text-align:right;">
+
+young
+
+</th>
+
+<th style="text-align:right;">
+
+difference
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 1 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.080
+
+</td>
+
+<td style="text-align:right;">
+
+0.080
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 2 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.081
+
+</td>
+
+<td style="text-align:right;">
+
+0.081
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 3 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.083
+
+</td>
+
+<td style="text-align:right;">
+
+0.083
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 4 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.078
+
+</td>
+
+<td style="text-align:right;">
+
+0.078
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 5 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.321
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.321
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Group Mean
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.163
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.163
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+## 2b: Choose a bad anchor
+
+If we accidentally anchor item 5 which is variant then the difference in
+performance on item 5 gets added to the difference in group means:
+
+``` r
+multipleGroup(
+   data_combined, 
+   1, 
+   itemtype = "Rasch",
+   group = old_or_young, 
+   # this notation says freely estimate the group means but
+   # constrain item 5 to be invariant
+   invariance = c("free_means", "Item_5"),
+   verbose = FALSE
+) %>% 
+   summarize_model() %>% 
+   kableExtra::kable()
+```
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+what
+
+</th>
+
+<th style="text-align:right;">
+
+old
+
+</th>
+
+<th style="text-align:right;">
+
+young
+
+</th>
+
+<th style="text-align:right;">
+
+difference
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 1 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.003
+
+</td>
+
+<td style="text-align:right;">
+
+0.991
+
+</td>
+
+<td style="text-align:right;">
+
+0.994
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 2 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.001
+
+</td>
+
+<td style="text-align:right;">
+
+0.989
+
+</td>
+
+<td style="text-align:right;">
+
+0.989
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 3 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.007
+
+</td>
+
+<td style="text-align:right;">
+
+0.986
+
+</td>
+
+<td style="text-align:right;">
+
+0.979
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 4 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+0.985
+
+</td>
+
+<td style="text-align:right;">
+
+0.985
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 5 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.003
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.003
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Group Mean
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.988
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.988
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+## 3: Don’t anchor on anything
+
+If we don’t anchor on anything, then the model isn’t identified and we
+get weird estimates. It’s worth noticing that the sum of the difference
+in item 5 easiness and difference in group means still sums to -2 but
+it’s spread out in an arbitrary way:
+
+``` r
+multipleGroup(
+   data_combined, 
+   1, 
+   itemtype = "Rasch",
+   group = old_or_young, 
+   # freely estimate group means (and don't constrain anything invariant)
+   invariance = c("free_means"),
+   verbose = FALSE
+) %>% 
+   summarize_model() %>% 
+   kableExtra::kable()
+```
+
+    ## Warning: Multiple-group model may not be identified without providing
+    ## anchor items
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="text-align:left;">
+
+what
+
+</th>
+
+<th style="text-align:right;">
+
+old
+
+</th>
+
+<th style="text-align:right;">
+
+young
+
+</th>
+
+<th style="text-align:right;">
+
+difference
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 1 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.003
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.713
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.710
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 2 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.001
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.715
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.716
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 3 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.007
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.719
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.725
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 4 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.719
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.719
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Item 5 Easiness
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.002
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.710
+
+</td>
+
+<td style="text-align:right;">
+
+\-1.708
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="text-align:left;">
+
+Group Mean
+
+</td>
+
+<td style="text-align:right;">
+
+0.000
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.285
+
+</td>
+
+<td style="text-align:right;">
+
+\-0.285
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>

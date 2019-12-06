@@ -11,8 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 load packages
 
 ```{r, message=FALSE}
-library(tidyverse)
-library(mirt)
+
 ```
 
 ### Simulate data with dependency
