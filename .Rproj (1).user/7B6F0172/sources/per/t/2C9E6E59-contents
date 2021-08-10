@@ -1,0 +1,39 @@
+---
+title: "ben_columns_example"
+author: "Ben Stenhaug"
+output: 
+  github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Let's make some simple data to work with:
+
+```{r, message = FALSE}
+library(tidyverse)
+
+simple_data_frame <- 
+   tibble(
+      x = 1:5,
+      ben1 = rnorm(5),
+      ben2 = runif(5),
+      ben3 = rpois(5, 1)
+   ) %>% 
+   print()
+```
+
+Here's the base R way of changing columns with the form ben# to be equal to 1:
+
+```{r}
+simple_data_frame[ , str_detect(names(simple_data_frame), "^ben\\d+")] <- 1
+simple_data_frame
+```
+
+Here's the tidyverse way of doing the same thing
+
+```{r}
+simple_data_frame %>% mutate_at(vars(starts_with("ben")), function(x){x = 1})
+```
+

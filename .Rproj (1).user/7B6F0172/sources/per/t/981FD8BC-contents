@@ -1,0 +1,143 @@
+---
+title: "Edits to Bruno's tidyxl Blog Post"
+author: "Ben Stenhaug"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I read [a great blog post](http://www.brodrigues.co/blog/2018-09-11-human_to_machine/) by Bruno Rodrigues.
+
+In going through it, I made some edits based on my preferred way of coding in R. I'll first show my code (with comments of edits I've made), then Bruno's code, and then that our results are the same:
+
+# Set Up
+
+```{r message = FALSE}
+library(tidyverse)
+library(tidyxl)
+library(magrittr)
+
+time_use_xl <- xlsx_cells("data/time_use.xlsx")
+```
+
+# My Code
+
+```{r}
+sheets <- # use object we wrote it and i prefer str_detect
+   unique(time_use_xl$sheet) %>% 
+   str_subset("day$")
+   
+# avoid hard coding 6 and 58
+after_na_to_before_na <- function(df, col_with_na){
+   rows_na <- is.na(df[[col_with_na]])
+   
+   first_row <- min(which(!rows_na))
+   last_row <- first_row + min(which(rows_na[first_row:nrow(df)])) - 2
+
+   first_row:last_row
+}
+
+# this function has a variety of edits, the first is that day here lets us
+# use imap later which is nice!
+extract_data <- function(sheet, day){
+   activities <- 
+      sheet %>%
+      filter(col == 2) %>%
+      select(row, character) 
+   
+   rows_of_interest <- # again, this is done to avoid hard coding 6 and 58
+      activities$row[after_na_to_before_na(activities, "character")]
+   
+   # no reason this can't be a vector here
+   activities %<>%
+      filter(row %in% rows_of_interest) %>% 
+      rename(activities = character) %>%
+      pull(activities)
+   
+   cols_to_extract <- sheet %>% # i personally prefer str_detect
+      filter(str_detect(character, "^Population who completed")) %>% 
+      pull(col)
+   
+   headers_pos <- cols_to_extract - 1
+   
+   headers <- sheet %>%
+      filter(col %in% headers_pos, row == 3) %>%
+      pull(character)
+   
+   # can avoid all of the maps!
+   sheet %>% 
+      filter(col %in% cols_to_extract) %>% 
+      arrange(col) %>% 
+      select(sheet, address, row, col, character) %>% 
+      filter(row %in% rows_of_interest) %>% 
+      select(col, character) %>% 
+      mutate(
+         population = rep(headers, times = table(col)),
+         col = NULL,
+         activities = rep(activities, times = n_distinct(col)),
+         day = day
+      )
+}
+
+clean_data_ben <- 
+   # i like split better than map filter, and it has bonus of keeping names
+   split(time_use_xl, time_use_xl$sheet)[sheets] %>% 
+   # imap uses list name to populate day (see 2nd parameter of extract_data
+   imap(extract_data) %>%
+   bind_rows() %>%
+   select(day, population, activities, time = character)
+```
+
+# Bruno's Code
+
+```{r}
+sheets <- xlsx_sheet_names("data/time_use.xlsx") %>%
+   keep(grepl(pattern = ".*day$", .))
+
+extract_data <- function(sheet){
+   activities <- sheet %>%
+      filter(col == 2) %>%
+      select(row, character) %>%
+      filter(row %in% seq(6,58)) %>%
+      rename(activities = character) %>%
+      select(-row)
+   
+   cols_to_extract <- sheet %>% 
+      filter(grepl("Population who completed.*", character)) %>% 
+      pull(col)
+   
+   headers_pos <- cols_to_extract - 1
+   
+   headers <- sheet %>%
+      filter(col %in% headers_pos, row == 3) %>%
+      pull(character)
+   
+   cols_to_extract %>% 
+      map(~filter(sheet, col %in% .)) %>%
+      map(~select(., sheet, address, row, col, character)) %>%
+      map(~filter(., row %in% seq(6,58))) %>%
+      map(~select(., character)) %>%
+      map2(.x = ., .y = headers, ~mutate(.x, "population" = .y)) %>%
+      map(., ~bind_cols(activities, .)) %>%
+      bind_rows()
+}
+
+clean_data_bruno <- sheets %>%
+   map(~filter(time_use_xl, sheet %in% .)) %>%
+   set_names(sheets) %>%
+   map(extract_data) %>%
+   map2(.x = ., .y = sheets, ~mutate(.x, "day" = .y)) %>%
+   bind_rows() %>%
+   select(day, population, activities, time = character)
+```
+
+# Same Results!
+
+```{r}
+all_equal(clean_data_ben, clean_data_bruno)
+```

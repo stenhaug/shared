@@ -1,0 +1,181 @@
+---
+title: 'Making R code over 100 times faster: An example'
+author: "Ben Stenhaug"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+A friend of mine was recently complaining that R is slow. It's true that R isn't the fastest language, but it's also true that the gap between someone's slow R code and the optimal code in another language is usually mostly bridged by writing better R code.
+
+Let's take a look by diving into his situation and the code that he was finding frustratingly slow.
+
+## Part 1: The Example
+
+My friend gave me the following description of his problem:
+
+> "One file is one line per student demographic data in the entire district.  the other is a transcript file that's one line per course taken by each student in the district over their entire time in the district.  So there are ~7500 students, but the transcript file has ~325,000 entries.  my goal is to make a dichotomous variable for each math (~850 individual classes) and ELA class (~50 individual classes) offered in the district, add them as columns to the demographic dataset and give a student a 1 or a 0 if they took each class."
+
+He also sent me his current code:
+
+```{r}
+# note this function takes two data frames, demographics and transcript, as inputs which I don't have
+
+get_student_courses_with_loops <- function(demographics, transcript){
+   
+   math.courses <- unique(transcript$class_name[transcript$credit_type=="math"])
+   ela.courses <- unique(transcript$class_name[transcript$credit_type=="english"])
+   courses <- unlist(list(math.courses,ela.courses))
+
+   classes <- matrix(NA, length(demographics$student_number), length(courses))
+   colnames(classes) <- courses
+   
+   for (i in 1:length(demographics$student_number)){
+   	class.list <- transcript$class_name[transcript$student_number == demographics$student_number[i]]
+   	
+   	for (j in 1:ncol(classes)){
+   		classes[i,j] <- ifelse(sum(class.list == colnames(classes)[j]) >= 1, 1, 0)
+   	}
+   }
+   
+   credits.class <- cbind(demographics, classes) %>% as_tibble()
+   credits.class
+}
+```
+
+## Part 2: Let's try to write faster code
+
+The first thing I notice when looking at his code is that he approached the problem — with nested loops and the necessary logic — in a way that works well for other languagues, but isn't the best for R. 
+
+In general, R is best if you can write vectorized code as opposed to loops. Vectorized code means that the operation happens in parallel element-wise. For example, c(1, 2) + c(3, 4) = c(4, 6) — you can [read more about vectorization here](https://bookdown.org/rdpeng/rprogdatascience/vectorized-operations.html).
+
+It's also beneficial to keep data in rectangular data frames as opposed to more complicated nested structures. This is because rectangular data frames are easy to reason about (it's just like a spreadsheet!), it allows for vectorization because [each column of a data frame is a vector](https://r4ds.had.co.nz/tibbles.html), and the [beloved tidyverse packages](https://www.tidyverse.org/) are designed to work with rectangular data frames.
+
+### Creating small example data
+
+I don't have access to his data. So I create the simplest possible data with the necessary characteristics that I can play around with when I write code. This is similar to the idea of a [reprex](https://www.tidyverse.org/help/):
+
+```{r message=FALSE}
+library(tidyverse)
+
+demographics <- 
+   tribble(
+      ~student_number,  ~age,
+             1,          17,
+             2,          18,
+             3,          17
+   )
+
+transcript <- 
+   tribble(
+      ~student_number, ~class_name, ~credit_type,
+             1,         "algebra",    "math",
+             1,         "poetry",    "english",
+             2,         "poetry",    "english",
+             3,         "algebra",    "math"
+   )
+```
+
+### Writing a tidy function
+
+Now I can work to solve the problem. I'll first write code that works, then use that code to make a function.
+
+My approach is to first make a single variable for class which is the class name (algebra for example) followed by the credit type (math or english). For example, an algebra class which is a math credit turns into algebra_math.  I also add an indicator column with every value of 1 to encode that the student took that class:
+
+```{r}
+transcript_single_class_var <- 
+   transcript %>% 
+   mutate(
+      class = paste0(class_name, "_", credit_type), 
+      indicator = 1
+   ) %>% 
+   print() # this is a little trick to both print and assign results
+```
+
+Now I select just the columns I need and spread the data to be "wide" instead of "long" so that each class is its own column. You can read more about [the spread function here](https://r4ds.had.co.nz/tidy-data.html#spreading). I use fill = 0 to encode that students who didn't have an indicator of 1 for a class did not take that class.
+
+```{r}
+transcript_wide <- 
+   transcript_single_class_var %>% 
+   select(student_number, class, indicator) %>% 
+   spread(class, indicator, fill = 0) %>% 
+   print()
+```
+
+Now that `transcript_wide` has a row for each `student_number`, all that's left to do is to join it with `demographics`. You can [read more about joins in R here](https://r4ds.had.co.nz/relational-data.html).
+
+```{r}
+demographics %>% left_join(transcript_wide, by = "student_number")
+```
+
+Great! The code works! Now let's use the code to create a `get_student_courses_tidy` function.
+
+```{r}
+get_student_courses_tidy <- function(demographics, transcript){
+   
+   transcript_single_class_var <- 
+      transcript %>% 
+      mutate(
+         class = paste0(class_name, "_", credit_type), 
+         indicator = 1
+      )
+   
+   transcript_wide <- 
+      transcript_single_class_var %>% 
+      select(student_number, class, indicator) %>% 
+      spread(class, indicator, fill = 0)
+   
+   demographics %>% left_join(transcript_wide, by = "student_number")
+}
+```
+
+## Part 3: Comparing speeds
+
+### Creating large example data
+
+My friend's data has about 7,500 students and 325,000 transcript entries across about 850 math classes and 50 english classes. I'll make example data with only 2 classes, but I'll crank the number of students up to 150,000 to help see the speed difference.
+
+```{r}
+n_students <- 150000
+class_combinations <- list("none", "algebra", "poetry", c("algebra", "poetry"))
+
+demographics <- 
+   data_frame(
+      student_number = 1:n_students,
+      age = sample(17:18, size = n_students, replace = TRUE)
+   )
+   
+transcript <- 
+   data_frame(
+      student_number = 1:n_students,
+      class_combination = sample(1:4, size = n_students, replace = TRUE)
+   ) %>% 
+   mutate(
+      class_name = class_combinations[class_combination]
+   ) %>% 
+   unnest() %>% 
+   select(-class_combination) %>% 
+   filter(class_name != "none") %>% 
+   mutate(
+      credit_type = class_name %>% recode("algebra" = "math", "poetry" = "english")
+   )
+```
+
+### Timing the code
+
+I use the `tictoc` package to compare the speeds. Indeed, the tidy function is significantly faster. And at larger scales, the difference probably gets even bigger. For tidy methods, more data often doesn't add much time. However, for looping methods, more data might require many, many more loops which could take a while.
+
+```{r}
+# the looping function takes a while
+tictoc::tic()
+get_student_courses_with_loops(demographics, transcript)
+tictoc::toc()
+
+# the tidy function is much faster!
+tictoc::tic()
+get_student_courses_tidy(demographics, transcript)
+tictoc::toc()
+```
+
+If you'd like to get better at doing data science in R, the book [R for Data Science](https://r4ds.had.co.nz/) is a great resource. And if you're at Stanford, you can always [stop by walk-in consulting](https://ssds.stanford.edu/consulting-workshops/walk-consulting).
